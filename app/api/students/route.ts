@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
-import { mkdir } from 'fs/promises';
 
 export async function GET() {
   try {
@@ -29,17 +26,16 @@ export async function POST(request: NextRequest) {
     const id_card = formData.get('id_card') as File;
 
     let id_card_path = null;
+    
+    // Vercel handles serverless functions which are read-only.
+    // Instead of saving to a file system, we convert the image to a Base64 string 
+    // and store it directly in the 'text' column of the database.
     if (id_card && id_card.size > 0) {
       const bytes = await id_card.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      
-      const uploadDir = join(process.cwd(), 'public', 'uploads', 'id_cards');
-      await mkdir(uploadDir, { recursive: true });
-      
-      const fileName = `${Date.now()}_${id_card.name}`;
-      const filePath = join(uploadDir, fileName);
-      await writeFile(filePath, buffer);
-      id_card_path = `/uploads/id_cards/${fileName}`;
+      const base64Image = buffer.toString('base64');
+      const contentType = id_card.type || 'image/png';
+      id_card_path = `data:${contentType};base64,${base64Image}`;
     }
 
     const [result] = await pool.execute(
@@ -66,11 +62,6 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
   } catch (error: any) {
     console.error('Error registering student:', error);
-    if (error.code === 'ECONNREFUSED') {
-      return NextResponse.json({ 
-        error: 'Database connection failed. Please ensure MariaDB/MySQL is running and the database is configured.' 
-      }, { status: 503 });
-    }
     return NextResponse.json({ error: 'Failed to register student' }, { status: 500 });
   }
 }
